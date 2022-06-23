@@ -9,7 +9,6 @@ from shapes import shapes
 
 class TetrisEnv:
     def __init__(self):
-
         # Actions:
         self.actions = {
             0: self.move_left,
@@ -40,10 +39,6 @@ class TetrisEnv:
             "game_over": float("-inf")
         }
 
-        self.reset()
-        for i in range(50):
-            self.step(3)
-        self.render()
 
 
     # Main function that plays the env game
@@ -103,6 +98,7 @@ class TetrisEnv:
             for idx, line in enumerate(self.board):
                 # If the line does not contain a 0 then it's a full line
                 if not 0 in line:
+                    print("[!] Cleared line")
                     self.board = np.delete(self.board, idx)
                     self.board = np.insert(self.board, 0, np.zeros(self.board_width))
                     cleared_lines += 1
@@ -119,7 +115,6 @@ class TetrisEnv:
         # Return the state, reward and done is False
         return self.board, reward, False
 
-
     # Reset the env
     def reset(self):
         # Create the board
@@ -134,7 +129,6 @@ class TetrisEnv:
 
         # Reset game step (Used to end game if it goes on too long)
         self.game_step = 0
-
 
     # Render the game as gif
     def render(self, filename = "game.gif"):
@@ -157,15 +151,17 @@ class TetrisEnv:
             
             gif.append(image.copy())
 
-        print("[!] Saving gif")
-        gif[0].save(filename, save_all=True, append_images=gif[1:])
-        print("[!] Gif saved")
+        gif[0].save(filename, save_all=True, append_images=gif[1:], loop=0)
 
-
-    def check_if_colliding(self, new_pos, no_previous = False):
+    # Check if new position with optional new orientation collides with the old position/edges of the board
+    def check_if_colliding(self, new_pos, new_orientation = False, no_previous = False):
         # Get all the positions of the new position and remove all old positions
-        new = self.shape.get_shape_positions(new_pos)
         old = self.shape.get_shape_positions(self.shape.pos)
+
+        if new_orientation != False:
+            self.shape.orientation = new_orientation
+
+        new = self.shape.get_shape_positions(new_pos)
 
         if not no_previous:
             for pos in old:
@@ -188,17 +184,17 @@ class TetrisEnv:
 
         return False
 
-
+    # Remove positions from board (Set to 0)
     def remove_from_board(self, positions):
         for pos in positions:
             y, x = pos
             self.board[y][x] = 0
 
+    # Add position to board (Set to 1)
     def add_to_board(self, positions):
         for pos in positions:
             y, x = pos
             self.board[y][x] = 1
-
 
     # Function to move the active piece to the left
     def move_left(self):
@@ -228,11 +224,38 @@ class TetrisEnv:
             # Add new positions
             self.add_to_board(self.shape.get_shape_positions(self.shape.pos))
 
-
     # Function to rotate the active piece
     def rotate(self):
-        #TODO
-        return
+        old_positions = self.shape.get_shape_positions(self.shape.pos)
+        original_orientation = self.shape.orientation
+
+        # Get the next orientation
+        if self.shape.orientation == len(shapes[self.shape.shape]) -1:
+            new_orientation = 0
+
+        else:
+            new_orientation = self.shape.orientation + 1
+
+        # Check if can rotate
+        if not self.check_if_colliding(self.shape.pos, new_orientation=new_orientation):
+            # Can rotate
+
+            # Set new orientation
+            self.shape.orientation = new_orientation
+
+            # Remove from board
+            self.remove_from_board(old_positions)
+
+            # Get new positions
+            new_positions = self.shape.get_shape_positions(self.shape.pos)
+
+            # Add to board
+            self.add_to_board(new_positions)
+
+        else:
+            # If we can't rotate
+            # Set back orientation to original
+            self.shape.orientation = original_orientation
 
     # Filler function to do nothing as action
     def do_nothing(self):
