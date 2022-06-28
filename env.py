@@ -36,7 +36,7 @@ class TetrisEnv:
             2: 10,
             3: 30,
             4: 120,
-            "game_over": float("-inf")
+            "game_over": -10000#float("-inf")
         }
 
 
@@ -56,13 +56,13 @@ class TetrisEnv:
             # Spawn new shape
             self.shape = Shape(self.board_width, self.board_height)
 
-            # Add to board
-            self.add_to_board(self.shape.get_shape_positions(self.shape.pos))
-
             # Check for game over
             if self.check_if_colliding(self.shape.pos, no_previous=True):
                 reward += self.rewards["game_over"]
                 return self.board, reward, True
+
+            # Add to board
+            self.add_to_board(self.shape.get_shape_positions(self.shape.pos))
 
 
         # Execute action if shape is still active
@@ -129,6 +129,8 @@ class TetrisEnv:
 
         # Reset game step (Used to end game if it goes on too long)
         self.game_step = 0
+
+        return self.state()
 
     # Render the game as gif
     def render(self, filename = "game.gif"):
@@ -261,6 +263,9 @@ class TetrisEnv:
     def do_nothing(self):
         return
 
+    # Return's the state used in ML (State for now is the board)
+    def state(self):
+        return self.board.copy()
 
 # Class that holds all tetris shapes and their orientation
 class Shape:
