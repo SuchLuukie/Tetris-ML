@@ -11,10 +11,10 @@ class TetrisEnv:
     def __init__(self):
         # Actions:
         self.actions = {
-            0: self.move_left,
-            1: self.move_right,
-            2: self.rotate,
-            3: self.do_nothing
+            0: self.do_nothing,
+            1: self.rotate,
+            2: self.move_right,
+            3: self.move_left
         }
         # Define actions space
         self.action_space = Discrete(len(self.actions))
@@ -22,21 +22,28 @@ class TetrisEnv:
         # Define env variables
         self.board_width = 10
         self.board_height = 20
-        self.max_game_length = 1000
+        self.max_game_length = 500
+
+        # Board values
+        # 0 = Air
+        # 1 = Tetris taken
+        # 2 = Ghost
 
         # Rendering variables
         self.render_cell_size = 20
         self.background_color = (17,17,17)
         self.shape_color = (124, 252, 0)
+        self.ghost_color = (256, 100, 0)
 
         # Define rewards (Integers for amount of lines cleared)
         self.rewards = {
             0: 0,
-            1: 4,
-            2: 10,
-            3: 30,
-            4: 120,
-            "game_over": -10000#float("-inf")
+            1: 40,
+            2: 100,
+            3: 300,
+            4: 1200,
+            "game_over": -10000,
+            "height_reward": 2
         }
 
 
@@ -44,22 +51,23 @@ class TetrisEnv:
     # Main function that plays the env game
     def step(self, action):
         # Default variables
-        reward = 0
+        reward = -1
 
         # Check if we need to end game because of max game step
         if self.game_step == self.max_game_length:
-            return self.board, reward, True
+            return self.state(), reward, True
 
 
         # Check if there's currently an active shape
         if not self.shape.active:
             # Spawn new shape
             self.shape = Shape(self.board_width, self.board_height)
+            self.ghost_positons = []
 
             # Check for game over
             if self.check_if_colliding(self.shape.pos, no_previous=True):
                 reward += self.rewards["game_over"]
-                return self.board, reward, True
+                return self.state(), reward, True
 
             # Add to board
             self.add_to_board(self.shape.get_shape_positions(self.shape.pos))
@@ -68,6 +76,28 @@ class TetrisEnv:
         # Execute action if shape is still active
         if self.shape.active:
             self.actions[action]()
+
+        # Add ghost
+        if self.shape.active:
+            # Update old ghost positions
+            self.old_ghost_positions = self.ghost_positons.copy()
+
+            # Add ghost (ghosts positions gets updated)
+            self.add_shape_ghost()
+
+
+        # Calculate reward by seeing if the lowest position in new ghost Y is higher positioned than old  lowest position in ghost Y
+        try:
+            lowest_pos_old = min([pos[0] for pos in self.old_ghost_positions])
+            lowest_pos_new = min([pos[0] for pos in self.ghost_positons])
+            if lowest_pos_new < lowest_pos_old:
+                reward += self.rewards["height_reward"]
+
+            elif lowest_pos_new > lowest_pos_old:
+                reward += self.rewards["height_reward"] * -2
+
+        except ValueError:
+            pass
 
 
         # Move shape down if shape is still active
@@ -88,6 +118,9 @@ class TetrisEnv:
 
             # If it does collide
             else:
+                # Add shape to overwrite ghost shape
+                self.add_to_board(self.shape.get_shape_positions(self.shape.pos))
+
                 # Set shape inactive
                 self.shape.active = False
 
@@ -97,7 +130,7 @@ class TetrisEnv:
             cleared_lines = 0
             for idx, line in enumerate(self.board):
                 # If the line does not contain a 0 then it's a full line
-                if not 0 in line:
+                if not 0 in line and not 2 in line:
                     print("[!] Cleared line")
                     self.board = np.delete(self.board, idx)
                     self.board = np.insert(self.board, 0, np.zeros(self.board_width))
@@ -113,7 +146,7 @@ class TetrisEnv:
         self.game_step += 1
 
         # Return the state, reward and done is False
-        return self.board, reward, False
+        return self.state(), reward, False
 
     # Reset the env
     def reset(self):
@@ -130,6 +163,9 @@ class TetrisEnv:
         # Reset game step (Used to end game if it goes on too long)
         self.game_step = 0
 
+        # Reset ghost positions
+        self.ghost_positons = []
+
         return self.state()
 
     # Render the game as gif
@@ -145,11 +181,16 @@ class TetrisEnv:
             for y, row in enumerate(board):
                 for x, cell in enumerate(row):
                     if cell != 0:
+                        if cell == 1:
+                            color = self.shape_color
+                        elif cell == 2:
+                            color = self.ghost_color
+
                         ny, nx = y*self.render_cell_size, x*self.render_cell_size
 
                         # Get the shape for the rectangle and draw it
                         shape = [nx, ny, nx + self.render_cell_size, ny + self.render_cell_size]
-                        draw.rectangle(shape, fill=self.shape_color)
+                        draw.rectangle(shape, fill=color)
             
             gif.append(image.copy())
 
@@ -178,7 +219,7 @@ class TetrisEnv:
                     return True
 
                 # If the cell is already taken
-                elif self.board[pos[0]][pos[1]] != 0:
+                elif self.board[pos[0]][pos[1]] == 1:
                     return True
 
             except IndexError:
@@ -193,10 +234,10 @@ class TetrisEnv:
             self.board[y][x] = 0
 
     # Add position to board (Set to 1)
-    def add_to_board(self, positions):
+    def add_to_board(self, positions, value = 1):
         for pos in positions:
             y, x = pos
-            self.board[y][x] = 1
+            self.board[y][x] = value
 
     # Function to move the active piece to the left
     def move_left(self):
@@ -263,9 +304,35 @@ class TetrisEnv:
     def do_nothing(self):
         return
 
+    # Add the ghost to the board (Where the tetris shape will go if you set it all the way down)
+    # Board value will be 2
+    def add_shape_ghost(self):
+        self.remove_from_board(self.ghost_positons)
+        has_collided = False
+
+        old_pos = self.shape.pos
+        while not has_collided:
+            new_pos = [old_pos[0]+1, old_pos[1]]
+
+            # Check if it collides when moving down
+            if self.check_if_colliding(new_pos):
+                has_collided = True
+                positions = self.shape.get_shape_positions(old_pos)
+                self.add_to_board(positions, value=2)
+                self.ghost_positons = positions
+
+            old_pos = new_pos        
+
+
     # Return's the state used in ML (State for now is the board)
     def state(self):
-        return self.board.copy()
+        # Convert from numpy array to list
+        state = [list(row) for row in self.board]
+        
+        # Get last 5 rows of the state
+        state = state[-3:]
+
+        return state
 
 # Class that holds all tetris shapes and their orientation
 class Shape:
@@ -276,7 +343,7 @@ class Shape:
         self.pos = [0, round(self.board_width/2)-1]
 
         # Get a random shape
-        self.shape = randint(0, len(shapes)-1)
+        self.shape = 4#randint(0, len(shapes)-1)
 
         # Default orientation
         self.orientation = 0

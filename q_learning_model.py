@@ -11,9 +11,10 @@ class QLearningModel:
 
         # Empty tables used for rewriting over the existing files (To reset)
         # Define the main tables
-        self.states_index = np.array([])
-        self.q_table = np.array([])
+        self.states_index = []
+        self.q_table = []
 
+        self.write_model_to_file()
         # Load the model from files
         self.load_model_from_file()
 
@@ -23,7 +24,7 @@ class QLearningModel:
         self.epsilon = 0.1
 
         # Set training size
-        self.training_size = 500
+        self.training_size = 250
         self.total_trained = 0
         self.eval_episodes = 10
 
@@ -41,6 +42,7 @@ class QLearningModel:
             print(f"[!] Evaluating Q Learning Model after {self.total_trained} training games.")
             self.gif_file_name = str(self.total_trained)
 
+            print(len(self.q_table))
             self.evaluate(render_best=True)
 
 
@@ -137,32 +139,20 @@ class QLearningModel:
             print("[!] Best episode score: {}".format(best_episode[1]))
             best_episode[0].render(self.gif_file_name + "_" + str(best_episode[1]) + ".gif")
 
-
+    
     # Get the index location of where the given state is located in the q_table
     def get_state_index(self, state):
-        # Turn the state into string for easier lookups
-        state = "".join([str(round(item)) for item in state.flatten()])
+        state_index = [i for i in range(len(self.states_index)) if state == self.states_index[i]]
 
-        # If it's empty then add the state and get index
-        if self.states_index.size == 0:
-            self.states_index = np.array([state])
-            self.q_table = np.array([[0 for i in range(self.env.action_space.n)]])
-            state_index = 0
-
-        # If it's not empty
+        if state_index == []:
+            self.states_index.append(state)
+            state_index = len(self.states_index) - 1
+            self.q_table.append([0 for i in range(self.env.action_space.n)])
+        
         else:
-            # Try to find the state index
-            state_index = np.argwhere(self.states_index==state)
-
-            # If the state is not in the states_index, then add it and get the state_index
-            if type(state_index) == np.ndarray:
-                self.states_index = np.append(self.states_index, [state])
-                self.q_table = np.vstack([self.q_table, [0 for i in range(self.env.action_space.n)]])
-
-                state_index = np.argwhere(self.states_index==state)[0][0]
+            state_index = state_index[0]
 
         return state_index
-
 
     # Write the model to files
     def write_model_to_file(self):
@@ -171,8 +161,8 @@ class QLearningModel:
         
     # Load the model from files
     def load_model_from_file(self):
-        self.q_table = np.load("q_learning_files/q_table.npy", allow_pickle=True)
-        self.states_index = np.load("q_learning_files/states_index.npy", allow_pickle=True)
+        self.q_table = np.load("q_learning_files/q_table.npy", allow_pickle=True).tolist()
+        self.states_index = np.load("q_learning_files/states_index.npy", allow_pickle=True).tolist()
 
 
 QLearningModel()
